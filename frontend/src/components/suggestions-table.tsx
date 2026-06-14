@@ -11,8 +11,9 @@ type Suggestion = AnalysisResult["suggestions"][number];
 export function SuggestionsTable({ result }: { result: AnalysisResult }) {
   const [page, setPage] = useState(1);
   const pageSize = 4;
-  const totalPages = Math.max(1, Math.ceil(result.suggestions.length / pageSize));
-  const rows = useMemo(() => result.suggestions.slice((page - 1) * pageSize, page * pageSize), [page, result.suggestions]);
+  const suggestions = result?.suggestions || [];
+  const totalPages = Math.max(1, Math.ceil(suggestions.length / pageSize));
+  const rows = useMemo(() => suggestions.slice((page - 1) * pageSize, page * pageSize), [page, suggestions]);
 
   const columns: TableColumn<Suggestion>[] = [
     { key: "category", header: "Category", render: (row) => <Badge tone={row.category === "keywords" ? "blue" : "purple"}>{row.category}</Badge> },
@@ -27,7 +28,7 @@ export function SuggestionsTable({ result }: { result: AnalysisResult }) {
         <h2 className="panel-title">Prioritized improvements</h2>
       </div>
       <div className="panel-body">
-        {result.suggestions.length ? (
+        {suggestions.length ? (
           <>
             <Table columns={columns} rows={rows} />
             <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />

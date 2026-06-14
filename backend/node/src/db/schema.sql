@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS analyses (
   missing_keywords TEXT[] DEFAULT '{}',
   suggestions JSONB DEFAULT '[]'::jsonb,
   heatmap_data JSONB DEFAULT '[]'::jsonb,
+  ats_target TEXT,
+  ats_simulation JSONB DEFAULT '{}'::jsonb,
+  ontology_data JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

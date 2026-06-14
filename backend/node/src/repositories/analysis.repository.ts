@@ -1,7 +1,10 @@
 import { pool } from "../db/pool.js";
 import type { AnalysisResult } from "../types/analysis.js";
+import { VectorRepository } from "./vector.repository.js";
 
 export class AnalysisRepository {
+  constructor(private readonly vectors = new VectorRepository()) {}
+
   async create(input: {
     userId?: string;
     filename?: string;
@@ -10,11 +13,13 @@ export class AnalysisRepository {
     result: AnalysisResult;
   }) {
     if (!pool) {
+      console.log("[analysis:repository] DATABASE_URL missing; returning in-memory analysis id");
       return { ...input.result, id: crypto.randomUUID() };
     }
 
     const client = await pool.connect();
     try {
+      console.log("[analysis:repository] saving resume, JD, and analysis rows");
       await client.query("begin");
 
       const resume = await client.query<{ id: string }>(
@@ -48,8 +53,9 @@ export class AnalysisRepository {
       const analysis = await client.query<{ id: string }>(
         `insert into analyses
           (user_id, resume_id, jd_id, ats_score, match_score, parse_score, keyword_score,
-           semantic_score, format_score, readability_score, missing_keywords, suggestions, heatmap_data)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           semantic_score, format_score, readability_score, missing_keywords, suggestions, heatmap_data,
+           ats_target, ats_simulation, ontology_data)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          returning id`,
         [
           input.userId ?? null,
@@ -65,13 +71,48 @@ export class AnalysisRepository {
           input.result.missingKeywords,
           JSON.stringify(input.result.suggestions),
           JSON.stringify(input.result.heatmapData),
+          input.result.atsSimulation?.atsName ?? null,
+          JSON.stringify(input.result.atsSimulation ?? {}),
+          JSON.stringify(input.result.ontologyData ?? {}),
         ],
       );
 
       await client.query("commit");
-      return { ...input.result, id: analysis.rows[0]?.id };
+      const resumeId = resume.rows[0]?.id;
+      const analysisId = analysis.rows[0]?.id;
+
+      if (resumeId) {
+        await this.vectors.store({
+          sourceType: "resume",
+          sourceId: resumeId,
+          userId: input.userId,
+          content: input.resumeText,
+          metadata: {
+            filename: input.filename ?? "pasted-resume.txt",
+            analysisId,
+            atsScore: input.result.atsScore,
+          },
+        });
+      }
+
+      if (jdId && input.jobDescription) {
+        await this.vectors.store({
+          sourceType: "job_description",
+          sourceId: jdId,
+          userId: input.userId,
+          content: input.jobDescription,
+          metadata: {
+            analysisId,
+            missingKeywords: input.result.missingKeywords,
+          },
+        });
+      }
+
+      console.log(`[analysis:repository] saved analysis ${analysisId}`);
+      return { ...input.result, id: analysisId };
     } catch (error) {
       await client.query("rollback");
+      console.error("[analysis:repository] save failed; transaction rolled back");
       throw error;
     } finally {
       client.release();

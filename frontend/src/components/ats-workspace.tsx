@@ -1,119 +1,156 @@
 "use client";
 
-import { AlertCircle, Database, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { AnalyzerForm } from "@/components/analyzer-form";
-import { ResumeEditor } from "@/components/resume-editor";
-import { ResumeHeatmap } from "@/components/resume-heatmap";
-import { ScoreDashboard } from "@/components/score-dashboard";
-import { Sidebar } from "@/components/shell/sidebar";
-import { Topbar } from "@/components/shell/topbar";
-import { SuggestionsTable } from "@/components/suggestions-table";
-import { Badge } from "@/components/ui/badge";
-import { Tabs } from "@/components/ui/tabs";
-import { createAnalysis } from "@/lib/api";
-import { sampleJobDescription, sampleResume } from "@/lib/sample-data";
 import type { AnalysisResult } from "@/types/analysis";
+import { api } from "@/lib/api";
+import { AnalyzerForm } from "./analyzer-form";
+import { ScoreDashboard } from "./score-dashboard";
+import { SuggestionsTable } from "./suggestions-table";
+import { ResumeHeatmap } from "./resume-heatmap";
+import { FileDropzone } from "./file-dropzone";
+import { ATSSimulatorView } from "./ats-simulator";
+import { SkillOntologyView } from "./skill-ontology-view";
+import { ProgressStream } from "./progress-stream";
+import { Button } from "./ui/button";
 
-type View = "overview" | "heatmap" | "editor";
-
-export function ATSWorkspace() {
-  const [resumeText, setResumeText] = useState(sampleResume);
-  const [jobDescription, setJobDescription] = useState(sampleJobDescription);
+export function AtsWorkspace() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [view, setView] = useState<View>("overview");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "ontology" | "simulator" | "heatmap">("dashboard");
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | undefined>();
+  const [parsedText, setParsedText] = useState<string>("");
 
-  async function analyze() {
+  const handleFileSelect = async (file: File) => {
     setLoading(true);
-    setError("");
+    setTaskId("file-upload-" + Date.now()); 
     try {
-      const analysis = await createAnalysis({ resumeText, jobDescription });
-      setResult(analysis);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Analysis failed");
+      const uploadRes = await api.uploadFile(file);
+      setParsedText(uploadRes.parsedResume.rawText);
+      setUploadedFileName(file.name);
+      alert(`✅ Uploaded successfully: ${file.name}\n\nNow, add a job description (optional) and click "Run ATS Analysis".`);
+    } catch (e) {
+      console.error(e);
+      alert("Upload failed. Please check your backend connection.");
     } finally {
       setLoading(false);
+      setTaskId(null);
     }
-  }
+  };
+
+  const handleAnalyze = async (data: { resumeText: string; jobDescription: string }) => {
+    setLoading(true);
+    setTaskId("text-analysis-" + Date.now());
+    try {
+      const res = await api.analyze({ ...data, targetRole: "workday" });
+      setResult(res);
+    } catch (e) {
+      console.error(e);
+      alert("Analysis failed. Please check your backend connection and ensure pgvector is running.");
+      setResult(null);
+    } finally {
+      setLoading(false);
+      setTaskId(null);
+    }
+  };
 
   return (
-    <div className="app-shell">
-      <Sidebar />
-      <main className="main">
-        <Topbar />
-        <div className="page">
-          <div className="toolbar">
-            <div className="title-block">
-              <h1>Resume optimization workspace</h1>
-              <p>Parse, score, heatmap, and rewrite ATS-ready resumes before deployment.</p>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <Badge tone="green">
-                <Database size={13} />
-                PostgreSQL ready
-              </Badge>
-              <Badge tone="purple">
-                <Sparkles size={13} />
-                AI service layer
-              </Badge>
-            </div>
+    <div className="workspace-grid">
+      <div className="stack">
+        <div className="panel">
+          <div className="panel-header">
+            <h2 className="panel-title">Upload & Scan</h2>
           </div>
-
-          {error ? (
-            <div className="panel" style={{ marginBottom: 18, borderColor: "rgba(229, 72, 77, .35)" }}>
-              <div className="panel-body" style={{ display: "flex", gap: 10, color: "var(--red)" }}>
-                <AlertCircle size={18} />
-                {error}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="workspace-grid">
-            <AnalyzerForm
-              resumeText={resumeText}
-              jobDescription={jobDescription}
-              loading={loading}
-              onResumeChange={setResumeText}
-              onJobChange={setJobDescription}
-              onAnalyze={analyze}
-            />
-
-            <div className="stack">
-              <Tabs
-                value={view}
-                onChange={setView}
-                options={[
-                  { value: "overview", label: "Overview" },
-                  { value: "heatmap", label: "Heatmap" },
-                  { value: "editor", label: "Editor" },
-                ]}
-              />
-
-              {result ? (
-                <>
-                  {view === "overview" ? (
-                    <>
-                      <ScoreDashboard result={result} />
-                      <SuggestionsTable result={result} />
-                    </>
-                  ) : null}
-                  {view === "heatmap" ? <ResumeHeatmap result={result} /> : null}
-                  {view === "editor" ? <ResumeEditor value={resumeText} onChange={setResumeText} /> : null}
-                </>
-              ) : (
-                <div className="empty">
-                  <div>
-                    <Sparkles size={30} />
-                    <p>Run the first analysis to populate scores, heatmaps, and rewrite actions.</p>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div className="panel-body">
+            <FileDropzone onFileSelect={handleFileSelect} isUploading={loading} fileName={uploadedFileName} />
+            
+            <div style={{ margin: "24px 0", textAlign: "center", color: "var(--muted)", fontSize: 12, fontWeight: 700, textTransform: "uppercase" }}>OR PASTE TEXT</div>
+            
+            <AnalyzerForm onAnalyze={handleAnalyze} isLoading={loading} prefilledResumeText={parsedText} />
           </div>
         </div>
-      </main>
+
+        {taskId && <ProgressStream taskId={taskId} />}
+      </div>
+
+      <div className="main">
+        {result ? (
+          <div className="stack">
+            <div className="toolbar">
+              <div className="title-block">
+                <h1>Analysis Results</h1>
+                <p>Scored against your target parameters.</p>
+              </div>
+              <div className="tabs">
+                <button
+                  className={activeTab === "dashboard" ? "tab active" : "tab"}
+                  onClick={() => setActiveTab("dashboard")}
+                >
+                  Dashboard
+                </button>
+                <button
+                  className={activeTab === "ontology" ? "tab active" : "tab"}
+                  onClick={() => setActiveTab("ontology")}
+                >
+                  Skill Map
+                </button>
+                <button
+                  className={activeTab === "simulator" ? "tab active" : "tab"}
+                  onClick={() => setActiveTab("simulator")}
+                >
+                  ATS Simulator
+                </button>
+                <button
+                  className={activeTab === "heatmap" ? "tab active" : "tab"}
+                  onClick={() => setActiveTab("heatmap")}
+                >
+                  Heatmap
+                </button>
+              </div>
+            </div>
+
+            {activeTab === "dashboard" && (
+              <div className="stack">
+                <ScoreDashboard result={result} />
+                <SuggestionsTable suggestions={result.suggestions} />
+              </div>
+            )}
+            
+            {activeTab === "ontology" && (
+              <div className="stack">
+                {result.ontologyData ? (
+                  <SkillOntologyView ontology={result.ontologyData} />
+                ) : (
+                  <div className="empty">No ontology data generated. Please provide a Job Description.</div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "simulator" && (
+              <div className="stack">
+                {result.atsSimulation ? (
+                  <ATSSimulatorView simulation={result.atsSimulation} />
+                ) : (
+                  <div className="empty">No ATS simulation data available.</div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "heatmap" && (
+              <div className="stack">
+                <ResumeHeatmap result={result} />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="empty">
+            <div className="stack" style={{ alignItems: "center" }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Awaiting Document</h2>
+              <p style={{ margin: 0 }}>Upload a resume or paste text to generate an analysis.</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,22 @@
 import re
+import io
+
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+try:
+    from docx import Document
+except ImportError:
+    Document = None
+
+try:
+    import pytesseract
+    from PIL import Image
+except ImportError:
+    pytesseract = None
+    Image = None
 
 SECTION_ALIASES = {
     "summary": "summary",
@@ -39,6 +57,41 @@ SKILL_ALIASES = {
     "ci/cd": "CI/CD",
 }
 
+def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
+    """Extracts raw text from PDF or DOCX binary data."""
+    ext = filename.lower().split('.')[-1]
+    
+    if ext == 'pdf':
+        if pdfplumber is None:
+            return "Error: pdfplumber not installed"
+        try:
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                text = ""
+                for page in pdf.pages:
+                    # Very basic layout-aware extraction
+                    text += page.extract_text(x_tolerance=2, y_tolerance=3) + "\n"
+                if not text.strip() and pytesseract is not None:
+                    # Fallback to OCR if page is image-based
+                    return parse_image_pdf(file_bytes)
+                return text
+        except Exception as e:
+            return f"Error parsing PDF: {str(e)}"
+            
+    elif ext in ['doc', 'docx']:
+        if Document is None:
+            return "Error: python-docx not installed"
+        try:
+            doc = Document(io.BytesIO(file_bytes))
+            return "\n".join([para.text for para in doc.paragraphs])
+        except Exception as e:
+            return f"Error parsing DOCX: {str(e)}"
+            
+    return file_bytes.decode('utf-8', errors='ignore')
+
+def parse_image_pdf(file_bytes: bytes) -> str:
+    # Requires poppler & tesseract installed on the system to convert PDF to images
+    # We will provide a stub here as true OCR requires system-level dependencies
+    return "OCR parsing not fully implemented without poppler/tesseract system binaries."
 
 def parse_resume(text: str) -> dict:
     normalized = text.replace("\r\n", "\n").strip()
@@ -87,15 +140,13 @@ def parse_resume(text: str) -> dict:
         "layoutIssues": layout_issues,
     }
 
-
 def extract_skills(text: str) -> list[str]:
     found = set()
     lower = text.lower()
     for alias, canonical in SKILL_ALIASES.items():
         if re.search(rf"\b{re.escape(alias)}\b", lower):
             found.add(canonical)
-    return sorted(found)
-
+    return sorted(list(found))
 
 def detect_layout_issues(text: str) -> list[dict]:
     issues = []
@@ -115,8 +166,14 @@ def detect_layout_issues(text: str) -> list[dict]:
                 "message": "No email address detected in resume text.",
             }
         )
+    # Check for text box hints
+    if re.search(r"text box|two column|2-column", text, re.IGNORECASE):
+        issues.append({
+            "type": "layout",
+            "severity": "critical",
+            "message": "Potential multi-column or text-box layout. ATS systems often scramble this content."
+        })
     return issues
-
 
 def layout_risk(issues: list[dict]) -> str:
     severities = {issue["severity"] for issue in issues}
