@@ -5,6 +5,7 @@ import { GroqService } from "./groq.service.js";
 import type { AnalysisResult, ParsedResume } from "../types/analysis.js";
 import { parseResumeText } from "../utils/resume-parser.js";
 import { scoreResume } from "../utils/score.js";
+import { HttpClient } from "../utils/http-client.js";
 
 export class AnalysisService {
   constructor(
@@ -22,18 +23,36 @@ export class AnalysisService {
     const smartSkills = await this.groq.extractSkills(parsedResume.rawText);
     if (smartSkills.length > 0) {
       parsedResume.skills = smartSkills;
-      console.log(`[analysis:create] extracted ${smartSkills.length} smart skills`);
+      console.log(`[analysis:create] extracted ${smartSkills.length} smart resume skills`);
     }
 
-    // Score
-    const scoredRes = await fetch(`${env.aiServiceUrl}/score`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ resumeText: input.resumeText, jobDescription: input.jobDescription })
-    });
-    const scored = await scoredRes.json();
+    // Extract JD skills if provided
+    let jdSkills: string[] = [];
+    if (input.jobDescription) {
+      jdSkills = await this.groq.extractSkills(input.jobDescription);
+      console.log(`[analysis:create] extracted ${jdSkills.length} smart JD skills`);
+    }
+
+    // Single Network Call to Python AI Service
+    let aiPayload;
+    try {
+      console.log("[analysis:create] calling Python AI /analyze-full");
+      aiPayload = await HttpClient.post<any>(`${env.aiServiceUrl}/analyze-full`, {
+        resumeText: input.resumeText,
+        jobDescription: input.jobDescription,
+        resumeSkills: parsedResume.skills,
+        jdSkills: jdSkills,
+        atsTarget: input.targetRole ? "workday" : undefined
+      });
+    } catch (e) {
+      console.warn("[analysis:create] AI service /analyze-full failed, using local fallback:", e);
+      aiPayload = {
+        score: {}, heatmap: { zones: [] }, ontology: {}, atsSimulation: undefined
+      };
+    }
     
     // Generate Suggestions Deterministically if none exist
+    let scored = aiPayload.score || { parseScore: 0, keywordScore: 0, suggestions: [] };
     if (!scored.suggestions || scored.suggestions.length === 0) {
       scored.suggestions = [];
       if (scored.parseScore < 90) {
@@ -66,43 +85,12 @@ export class AnalysisService {
       }
     }
     
-    // Heatmap
-    const heatmapRes = await fetch(`${env.aiServiceUrl}/heatmap`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ resumeText: input.resumeText, jobDescription: input.jobDescription })
-    });
-    const heatmap = await heatmapRes.json();
-    
-    // Ontology
-    let ontologyData = undefined;
-    if (input.jobDescription) {
-      const jdSkills = input.jobDescription.split(" "); // highly simplified
-      const ontologyRes = await fetch(`${env.aiServiceUrl}/ontology/match`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ resumeSkills: parsedResume.skills, jdSkills: jdSkills })
-      });
-      ontologyData = await ontologyRes.json();
-    }
-    
-    // ATS Simulation if requested
-    let atsSimulation = undefined;
-    if (input.targetRole) {
-      const atsRes = await fetch(`${env.aiServiceUrl}/ats-simulate`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ resumeText: input.resumeText, atsTarget: "workday" }) // default to workday
-      });
-      atsSimulation = await atsRes.json();
-    }
-
     const result: AnalysisResult = { 
       ...scored, 
       parsedResume, 
-      heatmapData: heatmap.zones,
-      ontologyData,
-      atsSimulation
+      heatmapData: aiPayload.heatmap?.zones || [],
+      ontologyData: aiPayload.ontology,
+      atsSimulation: aiPayload.atsSimulation
     };
 
     const saved = await this.repository.create({

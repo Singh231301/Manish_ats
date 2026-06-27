@@ -11,13 +11,6 @@ try:
 except ImportError:
     Document = None
 
-try:
-    import pytesseract
-    from PIL import Image
-except ImportError:
-    pytesseract = None
-    Image = None
-
 SECTION_ALIASES = {
     "summary": "summary",
     "profile": "summary",
@@ -62,20 +55,38 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
     ext = filename.lower().split('.')[-1]
     
     if ext == 'pdf':
-        if pdfplumber is None:
-            return "Error: pdfplumber not installed"
+        text = ""
+        # 1. Try PyMuPDF first as it handles slightly corrupted PDFs better
         try:
-            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                text = ""
-                for page in pdf.pages:
-                    # Very basic layout-aware extraction
-                    text += page.extract_text(x_tolerance=2, y_tolerance=3) + "\n"
-                if not text.strip() and pytesseract is not None:
-                    # Fallback to OCR if page is image-based
-                    return parse_image_pdf(file_bytes)
-                return text
-        except Exception as e:
-            return f"Error parsing PDF: {str(e)}"
+            import fitz
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            for page in doc:
+                page_text = page.get_text()
+                if page_text:
+                    text += page_text + "\n"
+        except Exception:
+            pass
+            
+        if text.strip():
+            return text
+            
+        # 2. Try pdfplumber as a fallback
+        text = ""
+        if pdfplumber is not None:
+            try:
+                with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                    for page in pdf.pages:
+                        extracted = page.extract_text(x_tolerance=2, y_tolerance=3)
+                        if extracted:
+                            text += extracted + "\n"
+            except Exception:
+                pass
+                
+        if text.strip():
+            return text
+            
+        # 3. Both failed to extract text (it's an image). Return original warning message.
+        return "OCR parsing not fully implemented without poppler/tesseract system binaries."
             
     elif ext in ['doc', 'docx']:
         if Document is None:
@@ -87,11 +98,6 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
             return f"Error parsing DOCX: {str(e)}"
             
     return file_bytes.decode('utf-8', errors='ignore')
-
-def parse_image_pdf(file_bytes: bytes) -> str:
-    # Requires poppler & tesseract installed on the system to convert PDF to images
-    # We will provide a stub here as true OCR requires system-level dependencies
-    return "OCR parsing not fully implemented without poppler/tesseract system binaries."
 
 def parse_resume(text: str) -> dict:
     normalized = text.replace("\r\n", "\n").strip()

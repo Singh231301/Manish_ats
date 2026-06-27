@@ -3,7 +3,7 @@ import { z } from "zod";
 export const createAnalysisSchema = z.object({
   userId: z.string().uuid().optional(),
   resumeText: z.string().min(80, "Resume text must contain at least 80 characters"),
-  jobDescription: z.string().min(50).optional(),
+  jobDescription: z.string().min(50).optional().or(z.literal("")),
   filename: z.string().max(180).optional(),
   targetRole: z.string().max(120).optional(),
 });
@@ -11,7 +11,7 @@ export const createAnalysisSchema = z.object({
 export const optimizeSchema = z.object({
   analysisId: z.string().uuid().optional(),
   resumeText: z.string().min(80),
-  jobDescription: z.string().min(50).optional(),
+  jobDescription: z.string().min(50).optional().or(z.literal("")),
   tone: z.enum(["direct", "executive", "technical"]).default("direct"),
 });
 

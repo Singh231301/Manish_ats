@@ -9,21 +9,40 @@ export interface AnalyzePayload {
 }
 
 export const api = {
+  getHeaders() {
+    // In a real app, retrieve from secure store or cookie
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    return {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {})
+    };
+  },
+
   async uploadFile(file: File) {
     const formData = new FormData();
     formData.append("file", file);
+    
+    // For FormData, do not set content-type header
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const headers: Record<string, string> = {};
+    if (token) headers["authorization"] = `Bearer ${token}`;
+
     const res = await fetch(`${API_URL}/upload`, {
       method: "POST",
+      headers,
       body: formData,
     });
-    if (!res.ok) throw new Error("Upload failed");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ message: "Upload failed" }));
+      throw new Error(errData.message || "Upload failed");
+    }
     return res.json();
   },
 
   async analyze(payload: AnalyzePayload): Promise<AnalysisResult> {
     const response = await fetch(`${API_URL}/analyses`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: this.getHeaders(),
       body: JSON.stringify(payload),
     });
 

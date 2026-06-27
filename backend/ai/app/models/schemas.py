@@ -45,3 +45,10 @@ class OntologyMatchResponse(BaseModel):
     partial_matched: list[dict]
     missing: list[str]
     match_score: float
+
+class AnalyzeFullRequest(BaseModel):
+    resumeText: str = Field(min_length=10)
+    jobDescription: str | None = None
+    resumeSkills: list[str] = Field(default_factory=list)
+    jdSkills: list[str] = Field(default_factory=list)
+    atsTarget: str | None = None

@@ -18,9 +18,11 @@ apiRouter.get("/health", async (_request, response) => {
   });
 });
 
-apiRouter.use("/analyses", analysisRouter);
-apiRouter.use("/search", searchRouter);
-apiRouter.use("/ats", atsRouter);
-apiRouter.use("/ontology", ontologyRouter);
-apiRouter.use("/upload", uploadRouter);
-apiRouter.use("/stream", sseRouter);
+import { requireAuth } from "../middleware/auth.js";
+
+apiRouter.use("/analyses", requireAuth, analysisRouter);
+apiRouter.use("/search", requireAuth, searchRouter);
+apiRouter.use("/ats", requireAuth, atsRouter);
+apiRouter.use("/ontology", requireAuth, ontologyRouter);
+apiRouter.use("/upload", requireAuth, uploadRouter);
+apiRouter.use("/stream", requireAuth, sseRouter);

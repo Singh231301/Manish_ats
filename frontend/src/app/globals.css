@@ -188,7 +188,7 @@ button {
   box-shadow: var(--glass-shadow);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  overflow: hidden;
+  /* Removed overflow: hidden so tooltips don't clip */
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
@@ -204,6 +204,8 @@ button {
   padding: 20px 24px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
   background: rgba(255, 255, 255, 0.4);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
 }
 
 .panel-title {
@@ -524,6 +526,10 @@ button {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.hover-wrap:hover {
+  z-index: 50;
 }
 
 .hover-wrap:hover .hover-card {

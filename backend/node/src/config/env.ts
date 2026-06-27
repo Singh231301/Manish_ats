@@ -10,4 +10,5 @@ export const env = {
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
   groqApiKey: process.env.GROQ_API_KEY,
   groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
+  jwtSecret: process.env.JWT_SECRET ?? "default-dev-secret-do-not-use",
 };

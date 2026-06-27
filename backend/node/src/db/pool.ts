@@ -1,24 +1,18 @@
-import pg from "pg";
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { sequelize } from "./models.js";
 import { env } from "../config/env.js";
 
-export const pool = env.databaseUrl
-  ? new pg.Pool({
-      connectionString: env.databaseUrl,
-      max: 10,
-      idleTimeoutMillis: 30_000,
-    })
-  : null;
+// We still export pool for backward compatibility if needed, but it's null
+// since we migrated to Sequelize. Services using raw pool will need refactoring eventually,
+// but for now, we just export sequelize.
+export const pool = null;
 
 export async function testDatabaseConnection() {
-  if (!pool) {
+  if (!env.databaseUrl) {
     return { connected: false, reason: "DATABASE_URL is not configured" };
   }
 
   try {
-    await pool.query("select 1");
+    await sequelize.authenticate();
     return { connected: true };
   } catch (error) {
     return {
@@ -29,24 +23,25 @@ export async function testDatabaseConnection() {
 }
 
 export async function initializeDatabase() {
-  if (!pool) {
+  if (!env.databaseUrl) {
     console.warn("DATABASE_URL is not configured; database initialization skipped.");
     return;
   }
 
-  const schemaPath = join(dirname(fileURLToPath(import.meta.url)), "schema.sql");
-  const schema = await readFile(schemaPath, "utf-8");
-  await pool.query(schema);
-  console.log("Database schema is ready.");
-
   try {
-    const vectorSchemaPath = join(dirname(fileURLToPath(import.meta.url)), "vector-schema.sql");
-    const vectorSchema = await readFile(vectorSchemaPath, "utf-8");
-    await pool.query(vectorSchema);
-    console.log("pgvector schema is ready.");
+    // This handles all migrations for free without writing explicit SQL files.
+    // It compares the models to the DB schema and alters tables as needed.
+    await sequelize.sync({  alter: true });
+    console.log("Database schema is ready (Sequelize alter:true).");
+
+    // Try to enable pgvector and pg_trgm extensions
+    await sequelize.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+    await sequelize.query(`CREATE EXTENSION IF NOT EXISTS "pg_trgm";`);
+    await sequelize.query(`CREATE EXTENSION IF NOT EXISTS "vector";`);
+    console.log("PostgreSQL extensions ready.");
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "Unknown pgvector setup error";
-    console.warn("pgvector schema skipped. Install the PostgreSQL pgvector extension to enable semantic search.");
+    const reason = error instanceof Error ? error.message : "Unknown initialization error";
+    console.warn("Database initialization encountered an error.");
     console.warn(reason);
   }
 }

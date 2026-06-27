@@ -18,10 +18,11 @@ export class UploadController {
       });
 
       if (!res.ok) {
-        throw new Error(`Python AI upload failed: ${res.status}`);
+        const errorData = await res.json().catch(() => ({}));
+        return response.status(res.status).json({ message: errorData.detail || `Python AI upload failed: ${res.status}` });
       }
 
-      response.json(await res.json());
+      return response.json(await res.json());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown upload error";
       response.status(500).json({ message });

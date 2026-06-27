@@ -1,7 +1,7 @@
 from app.models.schemas import (
     OptimizeRequest, ParseRequest, ScoreRequest, 
     EmbedRequest, EmbedResponse, ATSSimulateRequest, 
-    HeatmapRequest, OntologyMatchRequest
+    HeatmapRequest, OntologyMatchRequest, AnalyzeFullRequest
 )
 from app.services.optimizer import optimize_resume
 from app.services.parser import parse_resume, extract_text_from_file
@@ -23,11 +23,16 @@ def health():
 def parse(request: ParseRequest):
     return {"parsedResume": parse_resume(request.text)}
 
+from fastapi import HTTPException
+
 @router.post("/parse-file")
 async def parse_file(file: UploadFile = File(...)):
     file_bytes = await file.read()
-    raw_text = extract_text_from_file(file_bytes, file.filename or "")
-    return {"parsedResume": parse_resume(raw_text)}
+    try:
+        raw_text = extract_text_from_file(file_bytes, file.filename or "")
+        return {"parsedResume": parse_resume(raw_text)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/score")
 def score(request: ScoreRequest):
@@ -61,6 +66,33 @@ def ontology_match(request: OntologyMatchRequest):
 @router.post("/ontology/expand")
 def ontology_expand(skills: list[str]):
     return {"expanded": expand_query(skills)}
+
+@router.post("/analyze-full")
+def analyze_full(request: AnalyzeFullRequest):
+    parsed = parse_resume(request.resumeText)
+    
+    # 1. Score
+    score_result = score_resume(parsed, request.jobDescription)
+    
+    # 2. Heatmap
+    heatmap_result = {"zones": compute_heatmap(parsed, request.jobDescription)}
+    
+    # 3. Ontology
+    ontology_result = None
+    if request.jobDescription and request.jdSkills:
+        ontology_result = compute_ontology_match(request.resumeSkills, request.jdSkills)
+        
+    # 4. ATS Simulate
+    ats_result = None
+    if request.atsTarget:
+        ats_result = simulate_ats(request.resumeText, request.atsTarget, parsed.get("layoutIssues", []))
+        
+    return {
+        "score": score_result,
+        "heatmap": heatmap_result,
+        "ontology": ontology_result,
+        "atsSimulation": ats_result
+    }
 
 from fastapi.responses import StreamingResponse
 from app.services.queue import get_task_status, stream_task_progress
